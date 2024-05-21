@@ -2,17 +2,22 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import "../utils/snackbar.dart";
 
 import "descriptor_tile.dart";
 
+final writeValueTextInput = TextEditingController();
+List<int> writeValue = [0, 0, 0, 0];
+
 class CharacteristicTile extends StatefulWidget {
   final BluetoothCharacteristic characteristic;
   final List<DescriptorTile> descriptorTiles;
 
-  const CharacteristicTile({Key? key, required this.characteristic, required this.descriptorTiles}) : super(key: key);
+  const CharacteristicTile(
+      {super.key, required this.characteristic, required this.descriptorTiles});
 
   @override
   State<CharacteristicTile> createState() => _CharacteristicTileState();
@@ -26,7 +31,8 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
   @override
   void initState() {
     super.initState();
-    _lastValueSubscription = widget.characteristic.lastValueStream.listen((value) {
+    _lastValueSubscription =
+        widget.characteristic.lastValueStream.listen((value) {
       _value = value;
       if (mounted) {
         setState(() {});
@@ -44,7 +50,47 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
 
   List<int> _getRandomBytes() {
     final math = Random();
-    return [math.nextInt(255), math.nextInt(255), math.nextInt(255), math.nextInt(255)];
+    return [
+      math.nextInt(255),
+      math.nextInt(255),
+      math.nextInt(255),
+      math.nextInt(255)
+    ];
+  }
+
+  _getWriteValue() {
+    return showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Input write value"),
+          content: TextField(
+            keyboardType: const TextInputType.numberWithOptions(
+                signed: false, decimal: true),
+            controller: writeValueTextInput,
+            decoration: const InputDecoration(
+                hintText: "Input write value", border: OutlineInputBorder()),
+          ),
+          actions: [
+            OutlinedButton(
+              child: const Text("Write"),
+              onPressed: () {
+                writeValue[0] = int.parse((writeValueTextInput.text));
+                Navigator.pop(context);
+              },
+            ),
+            OutlinedButton(
+              child: const Text("Cancel"),
+              onPressed: () {
+                writeValueTextInput.text = "";
+                writeValue = [0, 0, 0, 0];
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future onReadPressed() async {
@@ -58,19 +104,83 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
 
   Future onWritePressed() async {
     try {
-      await c.write(_getRandomBytes(), withoutResponse: c.properties.writeWithoutResponse);
-      Snackbar.show(ABC.c, "Write: Success", success: true);
-      if (c.properties.read) {
-        await c.read();
-      }
+      writeValueTextInput.text = "";
+
+      return showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text("Input write value"),
+            content: TextField(
+              keyboardType: const TextInputType.numberWithOptions(
+                  signed: false, decimal: true),
+              controller: writeValueTextInput,
+              decoration: const InputDecoration(
+                  hintText: "Input write value", border: OutlineInputBorder()),
+            ),
+            actions: [
+              OutlinedButton(
+                child: const Text("Write"),
+                onPressed: () async {
+                  writeValue[0] = int.parse((writeValueTextInput.text));
+                  c.write(writeValue,
+                      withoutResponse: c.properties.writeWithoutResponse);
+                  Snackbar.show(ABC.c, "Write: Success", success: true);
+                  if (c.properties.read) {
+                    await c.read();
+                  }
+                  Navigator.pop(context);
+                },
+              ),
+              OutlinedButton(
+                child: const Text("Cancel"),
+                onPressed: () {
+                  writeValueTextInput.text = "";
+                  writeValue = [0, 0, 0, 0];
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          );
+        },
+      );
+
+      // await c.write(_getRandomBytes(),
+      //     withoutResponse: c.properties.writeWithoutResponse);
+      // Snackbar.show(ABC.c, "Write: Success", success: true);
+      // if (c.properties.read) {
+      //   await c.read();
+      // }
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Write Error:", e), success: false);
     }
   }
 
+  // Future onWritePressed() async {
+  //   try {
+  //     writeValueTextInput.text = "";
+
+  //     await _getWriteValue();
+
+  //     c.write(writeValue, withoutResponse: c.properties.writeWithoutResponse);
+  //     Snackbar.show(ABC.c, "Write: Success", success: true);
+  //     if (c.properties.read) {
+  //       await c.read();
+  //     }
+  //     // await c.write(_getRandomBytes(),
+  //     //     withoutResponse: c.properties.writeWithoutResponse);
+  //     // Snackbar.show(ABC.c, "Write: Success", success: true);
+  //     // if (c.properties.read) {
+  //     //   await c.read();
+  //     // }
+  //   } catch (e) {
+  //     Snackbar.show(ABC.c, prettyException("Write Error:", e), success: false);
+  //   }
+  // }
+
   Future onSubscribePressed() async {
     try {
-      String op = c.isNotifying == false ? "Subscribe" : "Unubscribe";
+      String op = c.isNotifying == false ? "Subscribe" : "Unsubscribe";
       await c.setNotifyValue(c.isNotifying == false);
       Snackbar.show(ABC.c, "$op : Success", success: true);
       if (c.properties.read) {
@@ -80,23 +190,24 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
         setState(() {});
       }
     } catch (e) {
-      Snackbar.show(ABC.c, prettyException("Subscribe Error:", e), success: false);
+      Snackbar.show(ABC.c, prettyException("Subscribe Error:", e),
+          success: false);
     }
   }
 
   Widget buildUuid(BuildContext context) {
     String uuid = '0x${widget.characteristic.uuid.str.toUpperCase()}';
-    return Text(uuid, style: TextStyle(fontSize: 13));
+    return Text(uuid, style: const TextStyle(fontSize: 13));
   }
 
   Widget buildValue(BuildContext context) {
     String data = _value.toString();
-    return Text(data, style: TextStyle(fontSize: 13, color: Colors.grey));
+    return Text(data, style: const TextStyle(fontSize: 13, color: Colors.grey));
   }
 
   Widget buildReadButton(BuildContext context) {
     return TextButton(
-        child: Text("Read"),
+        child: const Text("Read"),
         onPressed: () async {
           await onReadPressed();
           if (mounted) {
